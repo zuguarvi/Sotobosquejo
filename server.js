@@ -20,6 +20,8 @@ const state = {
   scores: {},
   strokes: [],
   fillOps: [],
+  lastGuess: '',
+  lastGuesserName: '',
   version: 1,
   message: 'Esperando jugadores'
 };
@@ -61,8 +63,12 @@ function clientState(id) {
     guessLeft: Math.max(0, Math.ceil((state.guessDeadline - now) / 1000)),
     guessSeconds: state.guessSeconds,
     scores: state.scores,
-    strokes: state.strokes,
-    fillOps: state.fillOps,
+    // El jugador que adivina recibe la pizarra vacía mientras el otro dibuja.
+    // El dibujo completo se revela recién al pasar a "guessing".
+    strokes: (state.phase === 'drawing' && state.currentDrawer !== id) ? [] : state.strokes,
+    fillOps: (state.phase === 'drawing' && state.currentDrawer !== id) ? [] : state.fillOps,
+    lastGuess: state.lastGuess,
+    lastGuesserName: state.lastGuesserName,
     version: state.version,
     message: state.message,
     isHost: state.hostId === id,
@@ -93,6 +99,8 @@ function startRound(drawerId) {
   state.phase = 'drawing';
   state.strokes = [];
   state.fillOps = [];
+  state.lastGuess = '';
+  state.lastGuesserName = '';
   chooseSecret();
   state.drawDeadline = Date.now() + 60_000;
   state.guessDeadline = 0;
@@ -105,6 +113,20 @@ function sendDrawing(auto=false) {
   state.drawDeadline = 0;
   state.guessDeadline = Date.now() + state.guessSeconds * 1000;
   bump(auto ? 'Terminó el minuto. Ahora a adivinar.' : 'Dibujo enviado. Ahora a adivinar.');
+}
+
+function endSession() {
+  state.phase = 'lobby';
+  state.currentDrawer = null;
+  state.secret = '';
+  state.drawDeadline = 0;
+  state.guessDeadline = 0;
+  state.strokes = [];
+  state.fillOps = [];
+  state.lastGuess = '';
+  state.lastGuesserName = '';
+  for (const p of state.players) state.scores[p.id] = 0;
+  bump('Sesión terminada. Elegí un rubro para empezar otra partida.');
 }
 
 function nextTurn() {
@@ -209,7 +231,11 @@ const server = http.createServer(async (req, res) => {
       if (b.type === 'send' && id === state.currentDrawer && state.phase === 'drawing') sendDrawing(false);
 
       if (b.type === 'guess' && state.phase === 'guessing' && id !== state.currentDrawer) {
-        const guess = String(b.guess || '').trim().toLowerCase()
+        const rawGuess = String(b.guess || '').trim().slice(0,80);
+        const guesser = state.players.find(x => x.id === id);
+        state.lastGuess = rawGuess;
+        state.lastGuesserName = guesser?.name || 'Jugador';
+        const guess = rawGuess.toLowerCase()
           .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
         const secret = state.secret.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
         if (guess && guess === secret) {
@@ -223,6 +249,8 @@ const server = http.createServer(async (req, res) => {
           bump('No es. Probá otra vez.');
         }
       }
+
+      if (b.type === 'end_session') endSession();
 
       if (b.type === 'next' && id === state.hostId) nextTurn();
 
