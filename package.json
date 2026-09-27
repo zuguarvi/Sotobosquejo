@@ -1,0 +1,13 @@
+{
+  "name": "sotobosquejo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Juego de dibujo y adivinanzas para 2 jugadores",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
